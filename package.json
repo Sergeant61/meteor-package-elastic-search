@@ -1,0 +1,14 @@
+{
+  "name": "elastic-search",
+  "private": true,
+  "scripts": {
+    "test": "meteor test-packages -s=settings.json ./ --driver-package test-in-browser",
+    "publish": "meteor publish --release=3.0.2"
+  },
+  "devDependencies": {
+    "typescript": "5.4.4"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^8.4.1"
+  }
+}
