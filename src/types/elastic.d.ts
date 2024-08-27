@@ -70,9 +70,10 @@ export interface SearchBody {
 }
 
 export interface InitOptions {
-  fields?: Record<string, 0 | 1>
-  runObserve: boolean
-  startWorker: boolean
+  excludedFields?: Record<string, 0 | 1>
+  runObserve?: boolean
+  startWorker?: boolean
+  beforeIndex?: (document: any) => Promise<any>
 }
 
 export interface Options {

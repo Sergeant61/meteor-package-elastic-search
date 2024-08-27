@@ -6,6 +6,10 @@ export let searchQueue: Queue | null = null
 
 export const startQueue = async () => {
   try {
+    if (searchQueue) {
+      return
+    }
+
     searchQueue = new Queue(QUEUE_NAME, { connection: (await getOptions()).bull!.connection })
     console.log('BullMq Queue Info:', searchQueue.opts)
   } catch (error) {

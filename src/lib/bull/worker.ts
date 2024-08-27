@@ -4,18 +4,23 @@ import { QUEUE_NAME } from '../constants'
 import { getOptions } from './../constants'
 import { client } from '../elastic-search'
 import { Mongo } from 'meteor/mongo'
+import { collectionInits } from '../../server'
 
 export let worker: Worker | null = null
 
 export const startWorker = async () => {
   try {
+    if (worker) {
+      return
+    }
+
     const options = await getOptions()
 
     worker = new Worker(
       QUEUE_NAME,
       async function (job: Job) {
         return Meteor.bindEnvironment(async function (job: Job) {
-          const { _id, process, connectionName, indexName, data, fields } = job.data
+          const { _id, _ids, process, connectionName, indexName, data, fields } = job.data
 
           if (process === 'removed') {
             await client!.delete({
@@ -26,17 +31,42 @@ export const startWorker = async () => {
 
           if (process === 'added' || process === 'changed') {
             // @ts-ignore
-            const body = data || (await Mongo.Collection.get(connectionName).findOneAsync(_id, { fields, readPreference: 'secondaryPreferred' }))
+            let document = data || (await Mongo.Collection.get(connectionName).findOneAsync(_id, { fields, readPreference: 'secondaryPreferred' }))
+
+            if (collectionInits[connectionName].beforeIndex) {
+              document = await collectionInits[connectionName].beforeIndex(document)
+              document._id = _id
+            }
 
             await client!.index({
               index: indexName, // Indeks adı
               id: _id, // optional: document ID
               body: {
-                ...body,
-                id: body._id,
+                ...document,
+                id: document._id,
                 _id: undefined,
               },
             })
+          }
+
+          if (process === 'bulk-added') {
+            let documents = await Mongo.Collection.get(connectionName)
+              .find({ _id: { $in: _ids } }, { fields, readPreference: 'secondaryPreferred' })
+              .fetchAsync()
+
+            const bulkOps: any[] = []
+
+            for (let document of documents) {
+              if (collectionInits[connectionName].beforeIndex) {
+                document = await collectionInits[connectionName].beforeIndex(document)
+                document._id = _id
+              }
+
+              bulkOps.push({ index: { _index: indexName, _id: document._id } })
+              bulkOps.push(document)
+            }
+
+            await client.bulk({ refresh: true, body: bulkOps })
           }
         })(job)
       },

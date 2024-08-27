@@ -15,7 +15,7 @@ const startElasticSearch = async (options: { startWorker: boolean } = { startWor
   }
 }
 
-const collectionInits: Record<string, InitOptions> = {}
+export const collectionInits: Record<string, InitOptions> = {}
 
 function sleep(ms: number) {
   return new Promise((resolve) => Meteor.setTimeout(resolve, ms))
@@ -39,14 +39,14 @@ Mongo.Collection.prototype.allDocumentSync = function () {
   beforeInitCheck(this._name)
 }
 
-Mongo.Collection.prototype.initElasticSearch = async function (options: InitOptions = { runObserve: true, startWorker: true }) {
-  await startElasticSearch({ startWorker: options.runObserve })
+Mongo.Collection.prototype.initElasticSearch = async function (options?: InitOptions) {
+  await startElasticSearch({ startWorker: options?.runObserve ?? true })
 
   const collection = this
   const connectionName = collection._name
   const indexName = `index_${collection._name}`
-  const fields = options.fields
-  const runObserve = options.runObserve
+  const fields = options?.excludedFields
+  const runObserve = options?.runObserve
 
   const payload = {
     connectionName,
@@ -55,17 +55,21 @@ Mongo.Collection.prototype.initElasticSearch = async function (options: InitOpti
   }
 
   if (runObserve) {
-    collection.find({}, { fields }).observeChanges({
-      added: async (_id: string, data: any) => {
-        await searchQueue!.add(`added_${connectionName}_${_id}`, { process: 'added', _id, data, ...payload })
-      },
-      changed: async (_id: string) => {
-        await searchQueue!.add(`changed_${connectionName}_${_id}`, { process: 'changed', _id, ...payload })
-      },
-      removed: async (_id: string) => {
-        await searchQueue!.add(`removed_${connectionName}_${_id}`, { process: 'removed', _id, ...payload })
-      },
-    })
+    try {
+      collection.find({}, { fields }).observeChanges({
+        added: async (_id: string, data: any) => {
+          await searchQueue!.add(`added_${connectionName}_${_id}`, { process: 'added', _id, data, ...payload })
+        },
+        changed: async (_id: string) => {
+          await searchQueue!.add(`changed_${connectionName}_${_id}`, { process: 'changed', _id, ...payload })
+        },
+        removed: async (_id: string) => {
+          await searchQueue!.add(`removed_${connectionName}_${_id}`, { process: 'removed', _id, ...payload })
+        },
+      })
+    } catch (error) {
+      throw new Meteor.Error('error', `Error in observeChanges for collection ${connectionName}:`, error)
+    }
   }
 
   Mongo.Collection.prototype.searchAdvanceAsync = async function (body: SearchBody, options?: TransportRequestOptionsWithOutMeta) {
@@ -143,15 +147,12 @@ Mongo.Collection.prototype.initElasticSearch = async function (options: InitOpti
         break
       }
 
-      for (let i = 0; i < data.length; i++) {
-        const { _id } = data[i]
-        await searchQueue!.add(`added_${connectionName}_${_id}`, { process: 'added', _id, ...payload })
-      }
+      await searchQueue!.add(`bulk-added_${connectionName}`, { process: 'bulk-added', _ids: data.map((d: any) => d._id), ...payload })
 
       skip += limit
       await sleep(ms)
     }
   }
 
-  collectionInits[connectionName] = options
+  collectionInits[connectionName] = options || {}
 }
