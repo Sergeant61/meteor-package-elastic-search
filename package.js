@@ -2,7 +2,7 @@ Package.describe({
   name: 'receptim:elastic-search',
   version: '1.0.1',
   summary: 'Automatic elasticsearch integration for meteor collections.',
-  git: '',
+  git: 'https://github.com/Sergeant61/meteor-package-elastic-search',
   documentation: 'README.md',
 })
 
